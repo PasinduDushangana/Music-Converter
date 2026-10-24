@@ -34,7 +34,7 @@ const features = [
 const faqs = [
   {
     q: "Are my files uploaded to a server?",
-    a: "Files you select from your device are processed locally in your browser. If you paste a direct media URL, our server briefly fetches it and passes it to your browser; it is not stored.",
+    a: "Files you select from your device are processed locally in your browser. If you paste a direct media URL, the published GitHub Pages site fetches it in your browser when the source allows CORS; the development server version briefly proxies it without storage.",
   },
   {
     q: "Which files can I convert?",

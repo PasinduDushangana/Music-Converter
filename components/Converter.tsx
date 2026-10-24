@@ -19,6 +19,7 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
+import { fetchBrowserMedia } from "@/lib/browser-media";
 import type { FFmpeg } from "@ffmpeg/ffmpeg";
 import type { fetchFile as FetchFile } from "@ffmpeg/util";
 type Status = "queued" | "converting" | "done" | "error";
@@ -35,6 +36,8 @@ type Item = {
 };
 type History = { name: string; bitrate: number; date: string };
 const MAX_FILE = 100 * 1024 * 1024;
+const staticSite = process.env.NEXT_PUBLIC_STATIC_DEPLOYMENT === "1";
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
 const supported = new Set([
   "mp3",
   "wav",
@@ -148,22 +151,26 @@ export default function Converter() {
     setError("");
     setBusyUrl(true);
     try {
-      const res = await fetch("/api/media", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      if (!res.ok) {
-        const data = await res
-          .json()
-          .catch(() => ({ error: "Could not fetch this media URL." }));
-        throw new Error(data.error);
+      if (staticSite) {
+        addFiles([await fetchBrowserMedia(url)]);
+      } else {
+        const res = await fetch("/api/media", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+        if (!res.ok) {
+          const data = await res
+            .json()
+            .catch(() => ({ error: "Could not fetch this media URL." }));
+          throw new Error(data.error);
+        }
+        const blob = await res.blob();
+        const filename = decodeURIComponent(
+          res.headers.get("X-Media-Name") || "remote-media.mp3",
+        );
+        addFiles([new File([blob], filename, { type: blob.type })]);
       }
-      const blob = await res.blob();
-      const filename = decodeURIComponent(
-        res.headers.get("X-Media-Name") || "remote-media.mp3",
-      );
-      addFiles([new File([blob], filename, { type: blob.type })]);
       setUrl("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not fetch this URL.");
@@ -180,7 +187,7 @@ export default function Converter() {
     ) {
       await new Promise<void>((resolve, reject) => {
         const script = document.createElement("script");
-        script.src = "/ffmpeg/ffmpeg.js";
+        script.src = `${basePath}/ffmpeg/ffmpeg.js`;
         script.onload = () => resolve();
         script.onerror = () =>
           reject(new Error("Could not load the conversion engine."));
@@ -191,8 +198,14 @@ export default function Converter() {
       window as typeof window & { FFmpegWASM: { FFmpeg: new () => FFmpeg } }
     ).FFmpegWASM.FFmpeg();
     await engine.load({
-      coreURL: await toBlobURL("/ffmpeg/ffmpeg-core.js", "text/javascript"),
-      wasmURL: await toBlobURL("/ffmpeg/ffmpeg-core.wasm", "application/wasm"),
+      coreURL: await toBlobURL(
+        `${basePath}/ffmpeg/ffmpeg-core.js`,
+        "text/javascript",
+      ),
+      wasmURL: await toBlobURL(
+        `${basePath}/ffmpeg/ffmpeg-core.wasm`,
+        "application/wasm",
+      ),
     });
     ff.current = engine;
     return engine;
