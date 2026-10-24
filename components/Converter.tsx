@@ -29,6 +29,7 @@ type Item = {
   progress: number;
   error?: string;
   outputUrl?: string;
+  sourceUrl: string;
   bitrate: number;
   duration?: number;
 };
@@ -81,6 +82,7 @@ export default function Converter() {
       ff.current?.terminate();
       itemsRef.current.forEach((i) => {
         if (i.outputUrl) URL.revokeObjectURL(i.outputUrl);
+        URL.revokeObjectURL(i.sourceUrl);
       });
     };
   }, []);
@@ -112,8 +114,26 @@ export default function Converter() {
           setError(`${file.name} is empty.`);
           continue;
         }
+        const id = crypto.randomUUID();
+        const sourceUrl = URL.createObjectURL(file);
+        const probe = document.createElement("audio");
+        probe.preload = "metadata";
+        probe.onloadedmetadata = () => {
+          if (Number.isFinite(probe.duration))
+            update(id, { duration: probe.duration });
+          probe.onerror = null;
+          probe.removeAttribute("src");
+          probe.load();
+        };
+        probe.onerror = () => {
+          probe.onerror = null;
+          probe.removeAttribute("src");
+          probe.load();
+        };
+        probe.src = sourceUrl;
         valid.push({
-          id: crypto.randomUUID(),
+          id,
+          sourceUrl,
           file,
           status: "queued",
           progress: 0,
@@ -122,7 +142,7 @@ export default function Converter() {
       }
       setItems((old) => [...old, ...valid]);
     },
-    [bitrate],
+    [bitrate, update],
   );
   async function importUrl() {
     setError("");
@@ -271,6 +291,7 @@ export default function Converter() {
   function remove(id: string) {
     const item = itemsRef.current.find((i) => i.id === id);
     if (item?.outputUrl) URL.revokeObjectURL(item.outputUrl);
+    if (item?.sourceUrl) URL.revokeObjectURL(item.sourceUrl);
     if (active === id) cancel();
     setItems((old) => old.filter((i) => i.id !== id));
   }
@@ -429,7 +450,11 @@ export default function Converter() {
                   <div className="file-info">
                     <strong title={item.file.name}>{item.file.name}</strong>
                     <small>
-                      {fmtSize(item.file.size)} · {item.bitrate} kbps MP3 ·{" "}
+                      {fmtSize(item.file.size)} ·{" "}
+                      {item.duration
+                        ? `${Math.floor(item.duration / 60)}:${String(Math.floor(item.duration % 60)).padStart(2, "0")} · `
+                        : ""}
+                      {item.bitrate} kbps MP3 ·{" "}
                       {item.status === "done"
                         ? "Ready"
                         : item.status === "converting"
@@ -455,12 +480,12 @@ export default function Converter() {
                         {item.error}
                       </small>
                     )}
-                    {item.outputUrl && (
+                    {(item.outputUrl || item.sourceUrl) && (
                       <audio
                         controls
                         preload="none"
-                        src={item.outputUrl}
-                        aria-label={`Preview ${item.file.name}`}
+                        src={item.outputUrl || item.sourceUrl}
+                        aria-label={`${item.outputUrl ? "Preview converted" : "Preview source"} ${item.file.name}`}
                       />
                     )}
                   </div>
